@@ -65,6 +65,53 @@ def random_search(maxweight, l):
         res = max(res, sum(x[0] for x in random_pick(maxweight, l)))
     return res
 
+def stupid_random(maxweight, l):
+    sol = [False for _ in l]
+    res = weight = value = 0
+    for _ in range(len(l) ** 2):
+        pick = random.randint(0, len(l) - 1)
+        if sol[pick]:
+            value -= l[pick][0]
+            weight -= l[pick][1]
+            sol[pick] = False
+        else:
+            value += l[pick][0]
+            weight += l[pick][1]
+            sol[pick] = True
+        if weight <= maxweight:
+            res = max(res, value)
+    return res
+
+def simulated_annealing(maxweight, l):
+    sol = [False for _ in l]
+    res = weight = value = 0
+    value_max = max(x[0] for x in l)
+    itermax = len(l) ** 2
+    for i in range(itermax):
+        T = (itermax - i) / itermax * value_max
+        pick = random.randint(0, len(l) - 1)
+        if sol[pick]:
+            # The future solution is worse
+            if weight <= maxweight:
+                if not random.random() <= math.exp(- l[pick][0] / T):
+                    continue
+
+            value -= l[pick][0]
+            weight -= l[pick][1]
+            sol[pick] = False
+        else:
+            # The future solution is worse
+            if weight + l[pick][1] > maxweight:
+                if not random.random() <= math.exp(- l[pick][0] / T):
+                    continue
+
+            value += l[pick][0]
+            weight += l[pick][1]
+            sol[pick] = True
+        if weight <= maxweight:
+            res = max(res, value)
+    return res
+
 def random_weight_based_pick(maxweight, l):
     mean_weight = sum(x[1] for x in l) / len(l)
     p = maxweight / mean_weight  / len(l)
@@ -218,18 +265,13 @@ def branch_and_bound(maxweight, l):
     return lower_bound
 
 if __name__ == '__main__':
-    maxweight, l = read()
+    weight, l = read()
 
-    """
-    print('val\t\t', greedy_val(maxweight, l), '\n'
-          'weight\t\t', greedy_weight(maxweight, l), '\n'
-          'ratio\t\t', greedy_frac(maxweight, l), '\n'
-          'random\t\t', random_search(maxweight, l), '\n'
-          'random weight\t', random_search_weight_based(maxweight, l), '\n'
-          'upper\t\t', upper_bound_greedy_frac(maxweight, l))
-    #
-    """
-    #print(dynamic_solve(maxweight, l))
-    #print(fptas(maxweight, l), upper_bound_greedy_frac(maxweight, l))
-    #print(fptas(maxweight, l))
-    print(dynamic_solve(maxweight, l))
+    print(greedy_frac(weight, l))
+    print(greedy_val(weight, l))
+    print(greedy_weight(weight, l))
+    print(dynamic_solve(weight, l))
+    print(stupid_random(weight, l))
+    print(simulated_annealing(weight, l))
+
+    # print(brute_solve(weight, l))
