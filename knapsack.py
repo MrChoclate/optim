@@ -4,6 +4,15 @@ import random
 import functools
 import heapq
 import math
+import time
+
+def timer(func):
+    def with_time(*args, **kwargs):
+        t = time.time()
+        res = func(*args, **kwargs)
+        print("{} took {} sec".format(func.__name__, time.time() - t))
+        return res
+    return with_time
 
 def read():
     n, maxweight = (int(x) for x in input().split(' '))
@@ -11,6 +20,7 @@ def read():
     l = [tuple(map(int, x)) for x in l]
     return maxweight, l
 
+@timer
 def brute_solve(maxweight, l):
     res = 0
     for n in range(1, len(l) + 1):
@@ -19,6 +29,7 @@ def brute_solve(maxweight, l):
                 res = max(res, sum(x[0] for x in comb))
     return res
 
+@timer
 def recursive_solve(maxweight, l):
     if maxweight < 0:
         return float('-inf')
@@ -31,6 +42,7 @@ def recursive_solve(maxweight, l):
         recursive_solve(maxweight, l[1:])
     )
 
+@timer
 def dynamic_solve(maxweight, l):
     @functools.lru_cache(maxsize=None)
     def rec(maxweight, n):
@@ -59,16 +71,18 @@ def random_pick(maxweight, l):
 
     return pick
 
+@timer
 def random_search(maxweight, l):
     res = 0
     for _ in range(len(l)):
         res = max(res, sum(x[0] for x in random_pick(maxweight, l)))
     return res
 
+@timer
 def stupid_random(maxweight, l):
     sol = [False for _ in l]
     res = weight = value = 0
-    for _ in range(len(l) ** 2):
+    for _ in range(10 * len(l)):
         pick = random.randint(0, len(l) - 1)
         if sol[pick]:
             value -= l[pick][0]
@@ -82,13 +96,18 @@ def stupid_random(maxweight, l):
             res = max(res, value)
     return res
 
-def simulated_annealing(maxweight, l):
+@timer
+def simulated_annealing(maxweight, l, Tmax=1):
     sol = [False for _ in l]
     res = weight = value = 0
-    value_max = max(x[0] for x in l)
-    itermax = len(l) ** 2
-    for i in range(itermax):
-        T = (itermax - i) / itermax * value_max
+    T = Tmax * max(x[0] for x in l)
+    i = j = 0
+    while T > 1:
+        i += 1
+        j += 1
+        if j > 100:
+            T = 0.9999 * T
+            j = 0
         pick = random.randint(0, len(l) - 1)
         if sol[pick]:
             # The future solution is worse
@@ -108,8 +127,10 @@ def simulated_annealing(maxweight, l):
             value += l[pick][0]
             weight += l[pick][1]
             sol[pick] = True
-        if weight <= maxweight:
-            res = max(res, value)
+        if weight <= maxweight and res < value:
+            res = value
+            j = 0
+
     return res
 
 def random_weight_based_pick(maxweight, l):
@@ -121,6 +142,7 @@ def random_weight_based_pick(maxweight, l):
             sol.append(item)
     return sol
 
+@timer
 def random_search_weight_based(maxweight, l):
     res = 0
     sol = None
@@ -138,9 +160,10 @@ def random_search_weight_based(maxweight, l):
 def random_neighbor(current, weight, maxweight, l):
     # Remove one object
     pick = copy.copy(current)
-    remove = random.choice(pick)
-    pick.remove(remove)
-    weight -= remove[1]
+    if pick:
+        remove = random.choice(pick)
+        pick.remove(remove)
+        weight -= remove[1]
 
     # Add one object
     remaining = list(set(l) - set(pick))
@@ -149,10 +172,10 @@ def random_neighbor(current, weight, maxweight, l):
         if obj[1] + weight <= maxweight:
             weight += obj[1]
             pick.append(obj)
-            break
 
     return pick, weight
 
+@timer
 def stochastic_hill_climbing(maxweight, l):
     res = 0
     current = random_pick(maxweight, l)
@@ -163,6 +186,27 @@ def stochastic_hill_climbing(maxweight, l):
         if value > res:
             res = value
             current, weight = new, new_weight
+
+    return res
+
+@timer
+def late_acceptance_hill_climbing(maxweight, l, k=100):
+    current = random_pick(maxweight, l)
+    res = value = sum(x[0] for x in current)
+    weight = sum(x[1] for x in current)
+    last_values = [value for _ in range(k)]
+    j = i = 0
+    while j < len(l):
+        new, new_weight = random_neighbor(current, weight, maxweight, l)
+        new_value = sum(x[0] for x in new)
+        if new_value > last_values[i % k]:
+            current, weight = new, new_weight
+            if new_value > res:
+                res = new_value
+                j = 0
+        last_values[i % k] = new_value
+        i += 1
+        j += 1
 
     return res
 
@@ -210,21 +254,26 @@ def solve_greedy(maxweight, sorted_l):
 
     return value
 
+@timer
 def greedy_frac(maxweight, l):
     return solve_greedy(maxweight, sorted(l, key=lambda x: - x[0] / x[1]))
 
+@timer
 def greedy_val(maxweight, l):
     return solve_greedy(maxweight, sorted(l, key=lambda x: - x[0]))
 
+@timer
 def greedy_weight(maxweight, l):
     return solve_greedy(maxweight, sorted(l, key=lambda x: x[1]))
 
+@timer
 def fptas(maxweight, l, eps=0.1):
     """Fully polynomial time approximation scheme"""
     max_value = max(x[1] for x in l)
     k = eps * max_value / len(l)
     return dynamic_solve(math.floor(maxweight / k), [(x[0], math.ceil(x[1] / k)) for x in l])[0]
 
+@timer
 def branch_and_bound(maxweight, l):
     l = sorted(l, key=lambda x: - x[0] / x[1])
     lower_bound = max(
@@ -253,25 +302,51 @@ def branch_and_bound(maxweight, l):
         if upper_bound <= lower_bound:
             continue
 
+        # We do not take the item
+        stack.append((weight, value, i + 1, None))
+
         # We take the item, upper_bound is the same
         if weight + l[i][1] <= maxweight:
             stack.append(
                 (weight + l[i][1], value + l[i][0], i + 1, upper_bound)
             )
 
-        # We do not take the item
-        stack.append((weight, value, i + 1, None))
-
     return lower_bound
+
+def get_neighborhood(sol, maxweight, l):
+    s = set(sol)
+    weight = sum(x[1] for x in sol)
+
+    for obj in sorted(set(l) - s, key=lambda x: - x[0]):
+        if obj[1] + weight <= maxweight:
+            yield s | set((obj,))
+    for obj in sol:
+        yield s - set((obj,))
+
+@timer
+def tabou(maxweight, l):
+    current = random_pick(maxweight, l)
+    tabou_list = set(str(set(current)))
+    j = 0
+    res = 0
+    while j < len(l):
+        for sol in get_neighborhood(current, maxweight, l):
+            if str(sol) not in tabou_list:
+                current = sol
+                tabou_list.add(str(sol))
+                break
+        j += 1
+        value = sum(x[0] for x in current)
+        if res < value:
+            res = value
+            j = 0
+    return res
+
 
 if __name__ == '__main__':
     weight, l = read()
 
-    print(greedy_frac(weight, l))
-    print(greedy_val(weight, l))
-    print(greedy_weight(weight, l))
-    print(dynamic_solve(weight, l))
-    print(stupid_random(weight, l))
     print(simulated_annealing(weight, l))
-
-    # print(brute_solve(weight, l))
+    print(greedy_frac(weight, l))
+    #print(branch_and_bound(weight, l))
+    #print(brute_solve(weight, l))
